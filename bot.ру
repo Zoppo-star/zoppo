@@ -1,0 +1,61 @@
+import logging
+import asyncio
+import sqlite3
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message
+from aiogram.utils import executor
+from datetime import datetime
+
+# Установи свой токен от BotFather
+TOKEN = "YOUR_BOT_TOKEN"
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher(bot)
+
+# Создаем базу данных
+conn = sqlite3.connect("schedule.db")
+cursor = conn.cursor()
+
+CREATE TABLE IF NOT EXISTS schedule (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    task TEXT,
+    time TEXT
+)
+""")
+conn.commit()
+
+# Команда старт
+@dp.message_handler(commands=["start"])
+async def start(message: Message):
+    await message.reply("Привет! Отправь мне задачу в формате: \nДень и время (часы:минуты), задача")
+
+# Добавление задачи
+@dp.message_handler()
+async def add_task(message: Message):
+    try:
+        data = message.text.split(",")
+        time = data[0].strip()
+        task = data[1].strip()
+        cursor.execute("INSERT INTO schedule (user_id, task, time) VALUES (?, ?, ?)", (message.from_user.id, task, time))
+        conn.commit()
+        await message.reply(f"Задача добавлена: {task} в {time}")
+    except Exception as e:
+        await message.reply("Неверный формат. Пожалуйста, отправьте в формате: ВРЕМЯ (чч:мм), ЗАДАЧА")
+
+# Фоновая проверка задач
+async def check_tasks():
+    while True:
+        now = datetime.now().strftime("%H:%M")
+        cursor.execute("SELECT user_id, task FROM schedule WHERE time = ?", (now,))
+        tasks = cursor.fetchall()
+        for user_id, task in tasks:
+            await bot.send_message(user_id, f"Напоминание: {task}")
+        await asyncio.sleep(60)
+
+# Запуск бота
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(check_tasks())
+    executor.start_polling(dp, skip_updates=True)
+
